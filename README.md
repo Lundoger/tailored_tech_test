@@ -55,7 +55,7 @@ Open <http://localhost:3000> and sign in as `owner@acme.test` / `datar00m-demo`.
 | ----------------- | --------------------------------------------------- |
 | `pnpm dev`        | Runs the web app and the API together               |
 | `pnpm build`      | Builds every package in dependency order            |
-| `pnpm test`       | Unit tests (91 of them)                             |
+| `pnpm test`       | Unit tests (106 of them)                            |
 | `pnpm typecheck`  | Typechecks every package                            |
 | `pnpm lint`       | ESLint across the workspace                         |
 | `pnpm db:migrate` | Creates and applies a migration                     |
@@ -157,6 +157,29 @@ An `<iframe>` with a short-lived signed URL, not pdf.js. Every target browser al
 reader with text selection, search, zoom and printing; embedding it costs nothing in bundle size and
 nothing in worker configuration. There is a fallback for browsers configured to download PDFs
 instead of displaying them.
+
+### The cache is invalidated by what changed, not by what might have
+
+Walking into a folder should not cost three requests, and renaming one file should not refresh the
+whole room. Both follow from how the cache is keyed and swept:
+
+- **Listings are invalidated per parent folder.** A change reports which folders it touched — a move
+  reports both the folder it left and the one it joined — so sibling folders keep their cached rows.
+  The blunt alternative, sweeping the room's whole key subtree, made every rename refetch every
+  visited folder, both breadcrumb trails and each open file's version history.
+- **Subtree totals are invalidated up the ancestor chain only.** Totals roll up, so a change inside
+  `Legal/Contracts` makes those two and the room stale — and nothing else.
+- **Breadcrumbs are computed, not fetched.** The sidebar already holds every folder with its parent,
+  so the trail is a walk up that map. The endpoint remains the fallback for a cold load of a deep
+  URL, where the tree has not arrived yet. [A test](apps/web/src/lib/folder-tree.spec.ts) pins the
+  derived trail to the shape the API returns.
+- **Folders are prefetched on hover and on focus.** Opening one usually renders from cache instead
+  of flashing skeletons, and because the query options are [defined once](apps/web/src/lib/node-queries.ts)
+  and shared by the hook and the prefetch, the two cannot warm different keys.
+
+That the sweep is precise is the part worth testing, since getting it wrong shows stale data rather
+than an error: [`node-cache.spec.ts`](apps/web/src/lib/node-cache.spec.ts) asserts against a real
+query client which keys a change does and does not touch.
 
 ### Edge cases that shaped the code
 
@@ -466,7 +489,7 @@ in the step itself.
 ## Testing
 
 ```bash
-pnpm test        # 91 unit tests
+pnpm test        # 106 unit tests
 ```
 
 The tests concentrate on the pure logic where a mistake is both easy to make and expensive:
@@ -479,6 +502,10 @@ The tests concentrate on the pure logic where a mistake is both easy to make and
 - [`node-cursor.spec.ts`](apps/api/src/nodes/node-cursor.spec.ts) — keyset pagination, in all three
   sort orders and both directions.
 - [`naming.spec.ts`](packages/shared/src/naming.spec.ts) — conflict resolution and name validation.
+- [`node-cache.spec.ts`](apps/web/src/lib/node-cache.spec.ts) and
+  [`folder-tree.spec.ts`](apps/web/src/lib/folder-tree.spec.ts) — which cache keys a change
+  invalidates, and the breadcrumb trail derived from the folder tree. Both fail quietly rather than
+  loudly: the symptom is stale or wrong data on screen, not an exception.
 
 The HTTP surface was verified end to end with scripted runs against a live server — 29 assertions
 for folders and listing, 38 for uploads, versioning and upload-content checks, 41 for sharing —
@@ -528,7 +555,7 @@ that looked like in practice:
   schema's first draft — the parts where typing speed was the only bottleneck.
 - **API surface verification.** The three scripted test runs mentioned above were generated and
   iterated on quickly. This was the highest-value use: it turned "I think delete cascades correctly"
-  into 101 assertions run against a live server, and it caught real bugs — the email schema
+  into 108 assertions run against a live server, and it caught real bugs — the email schema
   rejecting `" user@acme.test "` because zod validates before transforming, and a `tsc` `incremental`
   build silently producing a `dist` with missing files after Nest wiped the output directory.
 - **Checking library facts instead of trusting recall.** Prisma 7 moved connection URLs out of
@@ -542,6 +569,13 @@ What I did not delegate: the data model, the decision to make `ancestorIds` the 
 whole design, the two-phase upload, the proxy-instead-of-CORS call, and the shape of the sharing
 permission model. Those are the decisions the rest of the code follows from, and they are the ones
 worth being able to defend.
+
+Nor the review, which turned out to matter more than the drafting. A preview panel that was tiny and
+stretched at the same time, row actions that opened the file's info sheet behind their own dialog,
+and a version list that only ever showed one entry were all found by using the app — no test caught
+any of them. The same goes for the scope calls: email verification is documented as a known gap
+rather than half-built, and the caching work above started as "why does walking into a folder reload
+everything". Reading the output critically is the part that does not transfer.
 
 ---
 

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { Skeleton } from '@/components/ui/skeleton';
-import type { FolderTreeNode } from '@/hooks/use-nodes';
+import { ancestorIdsOf, indexFolders, type FolderTreeNode } from '@/lib/folder-tree';
 import { cn } from '@/lib/utils';
 
 interface TreeItem extends FolderTreeNode {
@@ -19,6 +19,7 @@ interface FolderTreeProps {
   currentFolderId: string | null;
   hrefFor: (folderId: string | null) => string;
   onDropNode?: (folderId: string | null) => void;
+  onPrefetch?: (folderId: string | null) => void;
   isDragging?: boolean;
 }
 
@@ -29,18 +30,20 @@ export function FolderTree({
   currentFolderId,
   hrefFor,
   onDropNode,
+  onPrefetch,
   isDragging,
 }: FolderTreeProps) {
-  const { roots, ancestorsOf } = useMemo(() => buildTree(folders ?? []), [folders]);
+  const roots = useMemo(() => buildTree(folders ?? []), [folders]);
+  const index = useMemo(() => indexFolders(folders ?? []), [folders]);
 
   // Expansion is derived: the path to the open folder is expanded by definition, and
   // only deliberate clicks are stored as overrides on top of it.
   const openPath = useMemo(
     () =>
       currentFolderId
-        ? new Set([...ancestorsOf(currentFolderId), currentFolderId])
+        ? new Set([...ancestorIdsOf(index, currentFolderId), currentFolderId])
         : new Set<string>(),
-    [ancestorsOf, currentFolderId],
+    [index, currentFolderId],
   );
   const [overrides, setOverrides] = useState<ReadonlyMap<string, boolean>>(new Map());
 
@@ -72,6 +75,7 @@ export function FolderTree({
         isActive={currentFolderId === null}
         isDropTarget={Boolean(isDragging && onDropNode)}
         onDropNode={onDropNode ? () => onDropNode(null) : undefined}
+        onPrefetch={onPrefetch ? () => onPrefetch(null) : undefined}
       />
 
       <ul role="tree" className="mt-0.5">
@@ -84,6 +88,7 @@ export function FolderTree({
             onToggle={toggle}
             hrefFor={hrefFor}
             onDropNode={onDropNode}
+            onPrefetch={onPrefetch}
             isDragging={isDragging}
           />
         ))}
@@ -99,6 +104,7 @@ function TreeBranch({
   onToggle,
   hrefFor,
   onDropNode,
+  onPrefetch,
   isDragging,
 }: {
   folder: TreeItem;
@@ -107,6 +113,7 @@ function TreeBranch({
   onToggle: (id: string) => void;
   hrefFor: (folderId: string | null) => string;
   onDropNode?: (folderId: string | null) => void;
+  onPrefetch?: (folderId: string | null) => void;
   isDragging?: boolean;
 }) {
   const isOpen = isExpanded(folder.id);
@@ -123,6 +130,7 @@ function TreeBranch({
         isActive={isActive}
         isDropTarget={Boolean(isDragging && onDropNode)}
         onDropNode={onDropNode ? () => onDropNode(folder.id) : undefined}
+        onPrefetch={onPrefetch ? () => onPrefetch(folder.id) : undefined}
         toggle={hasChildren ? { isOpen, onToggle: () => onToggle(folder.id) } : undefined}
       />
 
@@ -137,6 +145,7 @@ function TreeBranch({
               onToggle={onToggle}
               hrefFor={hrefFor}
               onDropNode={onDropNode}
+              onPrefetch={onPrefetch}
               isDragging={isDragging}
             />
           ))}
@@ -155,6 +164,7 @@ function TreeLink({
   toggle,
   isDropTarget,
   onDropNode,
+  onPrefetch,
 }: {
   label: string;
   href: string;
@@ -164,6 +174,7 @@ function TreeLink({
   toggle?: { isOpen: boolean; onToggle: () => void };
   isDropTarget?: boolean;
   onDropNode?: () => void;
+  onPrefetch?: () => void;
 }) {
   const [isOver, setIsOver] = useState(false);
 
@@ -213,6 +224,8 @@ function TreeLink({
 
       <Link
         href={href}
+        onMouseEnter={onPrefetch}
+        onFocus={onPrefetch}
         className={cn(
           'focus-visible:ring-ring flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors focus-visible:ring-2 focus-visible:outline-none',
           isActive ? 'font-medium' : 'text-muted-foreground hover:text-foreground',
@@ -225,10 +238,7 @@ function TreeLink({
   );
 }
 
-function buildTree(folders: FolderTreeNode[]): {
-  roots: TreeItem[];
-  ancestorsOf: (folderId: string) => string[];
-} {
+function buildTree(folders: FolderTreeNode[]): TreeItem[] {
   const byId = new Map<string, TreeItem>();
   for (const folder of folders) {
     byId.set(folder.id, { ...folder, children: [] });
@@ -241,15 +251,5 @@ function buildTree(folders: FolderTreeNode[]): {
     else roots.push(folder);
   }
 
-  const ancestorsOf = (folderId: string): string[] => {
-    const chain: string[] = [];
-    let current = byId.get(folderId)?.parentId ?? null;
-    while (current) {
-      chain.push(current);
-      current = byId.get(current)?.parentId ?? null;
-    }
-    return chain;
-  };
-
-  return { roots, ancestorsOf };
+  return roots;
 }

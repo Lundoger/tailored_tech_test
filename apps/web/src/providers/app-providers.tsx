@@ -27,7 +27,11 @@ function createQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        staleTime: 30_000,
+        // Mutations invalidate precisely what they touched, so cached data can be
+        // trusted for longer, and a revisited folder can stay in cache long enough
+        // to render without a skeleton.
+        staleTime: 60_000,
+        gcTime: 30 * 60_000,
         refetchOnWindowFocus: false,
         retry: (failureCount, error) => {
           if (error instanceof ApiError && error.status < 500) return false;

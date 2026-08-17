@@ -8,6 +8,7 @@ import {
   type SearchResultDto,
   type SortDirection,
 } from '@data-room/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { FolderPlus, Inbox, Share2, TriangleAlert, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useRef, useState } from 'react';
@@ -41,6 +42,8 @@ import {
 } from '@/hooks/use-nodes';
 import { useUploadQueue } from '@/hooks/use-upload-queue';
 import { ApiError, errorMessage } from '@/lib/api-error';
+import { breadcrumbTrail, indexFolders } from '@/lib/folder-tree';
+import { nodeListOptions, nodeStatsOptions } from '@/lib/node-queries';
 
 interface RoomBrowserProps {
   dataRoomId: string;
@@ -50,9 +53,22 @@ interface RoomBrowserProps {
 export function RoomBrowser({ dataRoomId, folderId }: RoomBrowserProps) {
   const router = useRouter();
 
+  const queryClient = useQueryClient();
+
   const room = useDataRoom(dataRoomId);
   const tree = useFolderTree(dataRoomId);
-  const breadcrumbs = useBreadcrumbs(dataRoomId, folderId);
+
+  // The tree already knows every folder's parent, so the trail is a walk up it
+  // rather than a request. The endpoint stays as the fallback for a cold load of
+  // a deep URL, where the tree has not arrived yet.
+  const derivedTrail = useMemo(() => {
+    const roomName = room.data?.name;
+    if (!roomName) return undefined;
+    return breadcrumbTrail(indexFolders(tree.data ?? []), roomName, folderId);
+  }, [folderId, room.data?.name, tree.data]);
+
+  const fetchedTrail = useBreadcrumbs(dataRoomId, folderId, derivedTrail === undefined);
+  const trail = derivedTrail ?? fetchedTrail.data;
 
   const [sort, setSort] = useState<NodeSort>('name');
   const [direction, setDirection] = useState<SortDirection>('asc');
@@ -77,13 +93,25 @@ export function RoomBrowser({ dataRoomId, folderId }: RoomBrowserProps) {
 
   const nodes = useMemo(() => list.data?.pages.flatMap((page) => page.items) ?? [], [list.data]);
 
-  const currentFolderName =
-    breadcrumbs.data?.[breadcrumbs.data.length - 1]?.name ?? room.data?.name ?? 'this folder';
+  const currentFolderName = trail?.[trail.length - 1]?.name ?? room.data?.name ?? 'this folder';
 
   const hrefFor = useCallback(
     (target: string | null) =>
       target ? `/rooms/${dataRoomId}/f/${target}` : `/rooms/${dataRoomId}`,
     [dataRoomId],
+  );
+
+  // Warmed on hover and on focus, so opening a folder usually renders from cache
+  // instead of flashing three skeletons while its listing, totals and trail load.
+  const prefetchFolder = useCallback(
+    (target: string | null) => {
+      void queryClient.prefetchInfiniteQuery({
+        ...nodeListOptions(dataRoomId, target, sort, direction),
+        pages: 1,
+      });
+      if (target) void queryClient.prefetchQuery(nodeStatsOptions(target));
+    },
+    [dataRoomId, direction, queryClient, sort],
   );
 
   const openNode = useCallback(
@@ -110,7 +138,7 @@ export function RoomBrowser({ dataRoomId, folderId }: RoomBrowserProps) {
     if (node.parentId === parentId) return;
 
     move.mutate(
-      { nodeId: node.id, input: { parentId, autoResolveConflict: false } },
+      { node, input: { parentId, autoResolveConflict: false } },
       {
         onSuccess: () => toast.success(`Moved “${node.name}”.`),
         onError: (error) => {
@@ -152,11 +180,7 @@ export function RoomBrowser({ dataRoomId, folderId }: RoomBrowserProps) {
       <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-6 sm:px-6">
         <header className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <NodeBreadcrumbs
-              trail={breadcrumbs.data}
-              hrefFor={hrefFor}
-              isLoading={breadcrumbs.isPending}
-            />
+            <NodeBreadcrumbs trail={trail} hrefFor={hrefFor} />
 
             <div className="flex flex-wrap items-center gap-2">
               <SearchCommand
@@ -227,6 +251,7 @@ export function RoomBrowser({ dataRoomId, folderId }: RoomBrowserProps) {
                 roomName={room.data?.name ?? 'Data room'}
                 currentFolderId={folderId}
                 hrefFor={hrefFor}
+                onPrefetch={prefetchFolder}
                 isDragging={Boolean(dragging)}
                 onDropNode={(targetId) => {
                   if (dragging) moveTo(dragging, targetId);
@@ -259,6 +284,8 @@ export function RoomBrowser({ dataRoomId, folderId }: RoomBrowserProps) {
                 direction={direction}
                 onSortChange={changeSort}
                 isLoading={list.isPending}
+                folderHref={(node) => hrefFor(node.id)}
+                onPrefetch={(node) => prefetchFolder(node.id)}
                 hasNextPage={list.hasNextPage}
                 isFetchingNextPage={list.isFetchingNextPage}
                 onLoadMore={() => void list.fetchNextPage()}

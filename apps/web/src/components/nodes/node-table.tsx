@@ -35,6 +35,9 @@ interface NodeTableProps {
   direction?: SortDirection;
   onSortChange?: (sort: NodeSort) => void;
   showVersions?: boolean;
+
+  folderHref?: (node: NodeDto) => string;
+  onPrefetch?: (node: NodeDto) => void;
 }
 
 export function NodeTable({
@@ -52,6 +55,8 @@ export function NodeTable({
   direction = 'asc',
   onSortChange,
   showVersions = true,
+  folderHref,
+  onPrefetch,
 }: NodeTableProps) {
   if (isLoading) {
     return <NodeTableSkeleton showVersions={showVersions} />;
@@ -108,6 +113,8 @@ export function NodeTable({
               trailing={renderTrailing?.(node)}
               drag={drag}
               showVersions={showVersions}
+              href={node.type === 'FOLDER' ? folderHref?.(node) : undefined}
+              onPrefetch={node.type === 'FOLDER' ? onPrefetch : undefined}
             />
           ))}
         </TableBody>

@@ -16,7 +16,8 @@ import {
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
-import { type FolderTreeNode, useFolderTree, useMoveNode } from '@/hooks/use-nodes';
+import { useFolderTree, useMoveNode } from '@/hooks/use-nodes';
+import type { FolderTreeNode } from '@/lib/folder-tree';
 import { ApiError, errorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
 
@@ -85,7 +86,7 @@ function MovePicker({
 
   const submit = () => {
     move.mutate(
-      { nodeId: node.id, input: { parentId: target, autoResolveConflict: false } },
+      { node, input: { parentId: target, autoResolveConflict: false } },
       {
         onSuccess: () => {
           onDone();

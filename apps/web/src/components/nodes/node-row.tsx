@@ -2,6 +2,7 @@
 
 import { formatBytes, formatRelativeTime, type NodeDto } from '@data-room/shared';
 import { Link2 } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 
 import { NodeIcon } from '@/components/nodes/node-icon';
@@ -24,6 +25,9 @@ interface NodeRowProps {
   trailing?: React.ReactNode;
   drag?: RowDragHandlers;
   showVersions?: boolean;
+  /** Set for folders, so the name is a real link: prefetched, and openable in a new tab. */
+  href?: string;
+  onPrefetch?: (node: NodeDto) => void;
 }
 
 export function NodeRow({
@@ -33,6 +37,8 @@ export function NodeRow({
   trailing,
   drag,
   showVersions = true,
+  href,
+  onPrefetch,
 }: NodeRowProps) {
   const [isOver, setIsOver] = useState(false);
 
@@ -46,6 +52,8 @@ export function NodeRow({
       draggable={Boolean(drag)}
       aria-label={`${node.type === 'FOLDER' ? 'Folder' : 'File'} ${node.name}`}
       onClick={() => onOpen(node)}
+      onMouseEnter={onPrefetch ? () => onPrefetch(node) : undefined}
+      onFocus={onPrefetch ? () => onPrefetch(node) : undefined}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
@@ -90,7 +98,22 @@ export function NodeRow({
       <TableCell className="max-w-0">
         <div className="flex items-center gap-2.5">
           <NodeIcon node={node} />
-          <span className="truncate font-medium">{node.name}</span>
+          {href ? (
+            // The row already navigates on click; this exists so the name behaves like
+            // a link — Next prefetches it, and ⌘/middle-click opens a new tab.
+            <Link
+              href={href}
+              onClick={(event) => event.stopPropagation()}
+              // Anchors are draggable by default, which would hand the browser a link
+              // drag instead of letting the row start a move.
+              draggable={false}
+              className="focus-visible:ring-ring truncate rounded-sm font-medium focus-visible:ring-2 focus-visible:outline-none"
+            >
+              {node.name}
+            </Link>
+          ) : (
+            <span className="truncate font-medium">{node.name}</span>
+          )}
           {node.isShared ? (
             <Badge variant="secondary" className="gap-1 px-1.5 py-0 text-[0.6875rem] font-normal">
               <Link2 className="size-3" aria-hidden />

@@ -11,9 +11,9 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 
-import { invalidateRoom } from '@/hooks/use-nodes';
 import { api } from '@/lib/api-client';
 import { ApiError, errorMessage } from '@/lib/api-error';
+import { invalidateNodeChange } from '@/lib/node-cache';
 import { UploadAbortedError, uploadWithProgress } from '@/lib/xhr-upload';
 
 const MAX_CONCURRENT_UPLOADS = 3;
@@ -107,7 +107,12 @@ export function useUploadQueue({
       const node = await api.post<NodeDto>(`/files/versions/${reservation.versionId}/complete`);
 
       update(id, { status: 'done', finalName: node.name, progress: 1 });
-      invalidateRoom(queryClient, dataRoomId);
+      // A new version reuses the node, so its history and signed URL go stale too.
+      invalidateNodeChange(queryClient, {
+        dataRoomId,
+        parentIds: [node.parentId],
+        nodeIds: [node.id],
+      });
     } catch (error) {
       if (error instanceof UploadAbortedError || entry.controller.signal.aborted) {
         update(id, { status: 'cancelled' });

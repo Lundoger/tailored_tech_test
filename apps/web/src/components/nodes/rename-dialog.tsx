@@ -68,7 +68,7 @@ function RenameForm({
     }
 
     rename.mutate(
-      { nodeId: node.id, input: { name: name.trim(), autoResolveConflict: false } },
+      { node, input: { name: name.trim(), autoResolveConflict: false } },
       {
         onSuccess: (updated) => {
           onDone();

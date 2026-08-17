@@ -39,7 +39,7 @@ export function DeleteNodeDialog({
   const confirm = () => {
     if (!node) return;
 
-    remove.mutate(node.id, {
+    remove.mutate(node, {
       onSuccess: () => {
         onOpenChange(false);
         onDeleted?.(node);

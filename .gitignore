@@ -5,6 +5,7 @@ build/
 out/
 .turbo/
 coverage/
+*.tsbuildinfo
 
 # Prisma client is generated into the db package
 packages/db/generated/

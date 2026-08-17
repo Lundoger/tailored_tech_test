@@ -19,6 +19,7 @@ export const queryKeys = {
     deletePreview: (nodeId: string) => ['nodes', nodeId, 'delete-preview'] as const,
     versions: (nodeId: string) => ['nodes', nodeId, 'versions'] as const,
     viewUrl: (nodeId: string) => ['nodes', nodeId, 'view-url'] as const,
+    searchAll: (roomId: string) => ['data-rooms', roomId, 'search'] as const,
     search: (roomId: string, term: string) => ['data-rooms', roomId, 'search', term] as const,
   },
 

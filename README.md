@@ -422,6 +422,15 @@ API asks storage how many bytes actually arrived **and** confirms the stored obj
 trusted on its own. `helmet` sets `nosniff`, a CSP and frame options on every response, which
 matters most for the local driver, since that one serves uploaded files from the app's own origin.
 
+**The database's own surface.** Row level security is deliberately off: the API is the
+authorisation boundary, it connects as the owning role, and every query already runs through the
+access resolver, so RLS policies would duplicate that logic in a second place where it could drift.
+That is only safe because nothing else can reach the tables. Supabase also fronts the `public`
+schema with a REST API, which this app never uses — and its anonymous role holds no `SELECT`,
+`INSERT`, `UPDATE` or `DELETE` on Prisma-created tables, so the publishable key cannot read a row
+even though no policy forbids it. If the tables were ever exposed to that API on purpose, RLS would
+have to come with them.
+
 **Injection and XSS.** Three raw SQL statements, all parameterised through tagged templates; the
 `Unsafe` variants of Prisma's raw API are not used anywhere. No `dangerouslySetInnerHTML`, no
 `eval`. Every request body and query string is parsed by a zod schema, which drops unknown keys.
@@ -490,8 +499,9 @@ Both halves deploy independently.
 runs `prisma migrate deploy` as a pre-deploy step, and health-checks `/health` — which touches the
 database, so a process that is up but cannot reach Postgres is correctly reported as unhealthy.
 
-**Web → Vercel.** [`vercel.json`](vercel.json) builds through Turborepo with the repository root as
-the project root, so the shared package is built first.
+**Web → Vercel.** Project root is `apps/web`, where Vercel finds `next` in the manifest;
+[`apps/web/vercel.json`](apps/web/vercel.json) then builds from the repository root through
+Turborepo, so the shared package is compiled before Next needs it.
 
 **Database and storage → Supabase.** Create a project and a **private** bucket named
 `data-room-files`. Setting `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` switches the storage driver

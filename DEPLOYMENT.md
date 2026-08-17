@@ -5,7 +5,7 @@ three have free tiers that cover this project.
 
 Everything the deployment needs is already in the repository —
 [`apps/api/Dockerfile`](apps/api/Dockerfile), [`railway.json`](railway.json) and
-[`vercel.json`](vercel.json) — so the steps below are configuration, not code.
+[`apps/web/vercel.json`](apps/web/vercel.json) — so the steps below are configuration, not code.
 
 Work through them in order: Railway needs the database to exist, and Vercel needs the API's URL.
 
@@ -33,10 +33,13 @@ ignored, but it is worth one glance, since one of them holds credentials.
    password — **copy it now**, the dashboard will not show it again.
 2. Wait for provisioning (~2 minutes).
 3. **Storage** → **New bucket**:
-   - Name: `data-room-files`
+   - Name: `data-room-files` — must match `SUPABASE_STORAGE_BUCKET`.
    - Public bucket: **off**. The app serves everything through short-lived signed URLs; a public
-     bucket would make every document readable by URL forever.
-   - Create.
+     bucket would make every document readable by URL forever, bypassing shares and revocation.
+   - File size limit: **50 MB or more**. The app rejects anything larger itself, but a bucket limit
+     below that would fail the upload at the storage step, after the progress bar has finished.
+   - Allowed MIME types (optional): `application/pdf`. Defence in depth — the API already verifies
+     the stored bytes really are a PDF.
    - No access policies are needed. The API authenticates with the service-role key, which bypasses
      row level security, and it is the only thing that ever talks to storage.
 4. **Project Settings → Database → Connection string → Session pooler**. Copy it and substitute
@@ -50,18 +53,35 @@ ignored, but it is worth one glance, since one of them holds credentials.
    backend per connection, which is what `prisma migrate deploy` needs for its advisory lock, and it
    is reachable over IPv4 — the direct connection is IPv6-only, which not every host can reach.
 
-5. **Project Settings → API**. Copy:
+   **URL-encode the password** if it contains `@ : / ? #` or `&`. An unencoded `@` splits the
+   connection string in the wrong place and produces a host-not-found error that looks like a
+   networking problem.
+
+5. **Project Settings → API Keys**. Copy:
    - **Project URL** → `SUPABASE_URL`
-   - **service_role** secret → `SUPABASE_SERVICE_ROLE_KEY` (not the `anon` key — that one cannot
-     write, and it is meant for browsers)
+   - the **secret key** (`sb_secret_…`) → `SUPABASE_SERVICE_ROLE_KEY`
+
+   Not the publishable key (`sb_publishable_…`) — that one is meant for browsers and cannot write.
+   The variable keeps the older name because that is what `service_role` used to be called; a secret
+   key carries the same full-access rights, and `supabase-js` takes it in the same argument.
 
 ---
 
 ## 2. Railway — the API
 
 1. <https://railway.app> → **New Project** → **Deploy from GitHub repo** → pick the repository.
-2. Railway reads [`railway.json`](railway.json) and builds with
-   [`apps/api/Dockerfile`](apps/api/Dockerfile). The first build takes ~3 minutes.
+2. Railway detects the workspace and offers one service per package — `@data-room/api` and
+   `@data-room/web`. Before applying:
+   - **Remove the `@data-room/web` service.** The web app goes to Vercel.
+   - On `@data-room/api`, set **Root Directory** to the repository root, not `apps/api`. The
+     Dockerfile copies the whole workspace on purpose: the API compiles against two workspace
+     packages and the Prisma client has to be generated before `nest build` typechecks it. Pointed
+     at `apps/api`, the build fails resolving those packages.
+
+   With the root as its source, Railway picks up [`railway.json`](railway.json) and takes the
+   builder, [`apps/api/Dockerfile`](apps/api/Dockerfile), the pre-deploy migration and the health
+   check from there. The first build takes ~3 minutes.
+
 3. **Variables** → add:
 
    | Variable                    | Value                                                           |
@@ -93,7 +113,8 @@ ignored, but it is worth one glance, since one of them holds credentials.
    process started. Swagger is at `/docs`.
 
 7. Seed the demo content — once, from the Railway shell (**Deployments → ⋯ → Shell**) or with the
-   CLI:
+   CLI. Skip this if you already ran the seed locally against the same Supabase project, which does
+   the identical work:
 
    ```bash
    railway run node apps/api/dist/seed/seed.js
@@ -108,9 +129,16 @@ ignored, but it is worth one glance, since one of them holds credentials.
 ## 3. Vercel — the web app
 
 1. <https://vercel.com/new> → import the same repository.
-2. **Root Directory: leave it as the repository root.** Not `apps/web` — the build goes through
-   Turborepo so the shared package is built first, and [`vercel.json`](vercel.json) already
-   specifies the build, install and output paths.
+2. **Root Directory: `apps/web`.** Vercel reads the framework version from the package manifest in
+   this directory, and `next` lives in `apps/web/package.json` — pointed at the repository root it
+   fails with `No Next.js version detected`. Framework preset: **Next.js** (it may auto-detect
+   `apps/api` and offer NestJS; that service is on Railway).
+
+   [`apps/web/vercel.json`](apps/web/vercel.json) then takes over and sets the build command to
+   `cd ../.. && pnpm turbo run build --filter=@data-room/web`. The detour through the repository
+   root is deliberate: `@data-room/shared` is consumed as `dist/index.js`, so Turborepo has to
+   compile it before Next builds. A bare `next build` inside `apps/web` cannot resolve it.
+
 3. **Environment Variables** → add one:
 
    | Variable     | Value                                                 |
@@ -168,3 +196,15 @@ rewrite produce `//auth/me`. Remove it and redeploy.
 
 **Documents open as a download instead of rendering** — that is the browser's PDF setting, not the
 app. The viewer detects it and offers "Open in a new tab".
+
+**The migration fails on `gin_trgm_ops`** — the trigram extension landed in a schema that is not on
+the connection's `search_path`. Run this once in the Supabase SQL editor and redeploy:
+
+```sql
+create extension if not exists pg_trgm with schema public;
+```
+
+**Everything worked, then stopped days later** — Supabase pauses a free project after about a week
+of inactivity, and Railway's free tier sleeps too. For a link that someone may open long after you
+send it, point any uptime pinger at `https://<your-api>/health` every 10 minutes: that endpoint runs
+`SELECT 1`, so it counts as database activity and keeps both awake.

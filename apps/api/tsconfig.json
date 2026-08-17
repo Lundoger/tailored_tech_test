@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "commonjs",
+    "moduleResolution": "node10",
+    "rootDir": "src",
+    "outDir": "dist",
+    "baseUrl": "./",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "declaration": true,
+    "sourceMap": true,
+    // Deliberately not `incremental`: Nest's `deleteOutDir` wipes dist while
+    // tsc's build info still claims every file is emitted, so a rebuild silently
+    // produces a dist with missing .js files.
+    "incremental": false,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

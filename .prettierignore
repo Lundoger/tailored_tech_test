@@ -1,0 +1,11 @@
+node_modules
+dist
+.next
+.turbo
+coverage
+pnpm-lock.yaml
+packages/db/generated
+
+# Prisma has its own formatter: `pnpm --filter @data-room/db exec prisma format`
+*.prisma
+packages/db/prisma/migrations

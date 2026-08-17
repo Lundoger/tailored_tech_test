@@ -1,0 +1,246 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/client"
+  runtime      = "nodejs"
+  moduleFormat = "cjs"
+}
+
+// Prisma 7 keeps connection URLs in `prisma.config.ts`, not here.
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  email String @unique
+  name  String
+
+  /// Null for accounts created through an OAuth provider.
+  passwordHash String?
+  googleId     String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dataRooms        DataRoom[]
+  createdNodes     Node[]             @relation("NodeCreatedBy")
+  uploadedVersions FileVersion[]
+  createdShares    Share[]
+  shareInvites     ShareRecipient[]
+  accessEvents     ShareAccessEvent[]
+
+  @@index([email])
+}
+
+model DataRoom {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  name        String
+  description String?
+
+  ownerId String @db.Uuid
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  nodes  Node[]
+  shares Share[]
+
+  @@index([ownerId, deletedAt, createdAt])
+}
+
+enum NodeType {
+  FOLDER
+  FILE
+}
+
+/// Folders and files in one recursive table, the way Drive models it: one listing
+/// query, one name-uniqueness rule, one share target, one move.
+model Node {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  dataRoomId String   @db.Uuid
+  dataRoom   DataRoom @relation(fields: [dataRoomId], references: [id], onDelete: Cascade)
+
+  /// Null at the data room root.
+  parentId String? @db.Uuid
+  parent   Node?   @relation("NodeTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children Node[]  @relation("NodeTree")
+
+  type NodeType
+  name String
+
+  /// Ordered path from the root. Backs subtree reads, breadcrumbs and share checks
+  /// without a recursive CTE.
+  ancestorIds String[] @db.Uuid
+  /// Equals ancestorIds.length.
+  depth       Int      @default(0)
+
+  /// FILE nodes point at their newest READY version. FOLDER nodes never do.
+  currentVersionId String?       @unique @db.Uuid
+  currentVersion   FileVersion?  @relation("CurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  versions         FileVersion[] @relation("NodeVersions")
+
+  /// Denormalised from the current version so a listing needs no join and a subtree
+  /// sum stays single-table. Written only by the transaction that promotes a version.
+  sizeBytes    Int     @default(0)
+  mimeType     String?
+  versionCount Int     @default(0)
+
+  createdById String @db.Uuid
+  createdBy   User   @relation("NodeCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  /// Soft delete. A folder and its whole subtree are stamped in one statement.
+  deletedAt DateTime?
+
+  shares       Share[]
+  accessEvents ShareAccessEvent[]
+
+  // One index per sort order the UI offers, all sharing the same prefix so keyset
+  // pagination stays a single range scan.
+  @@index([dataRoomId, parentId, deletedAt, type, name])
+  @@index([dataRoomId, parentId, deletedAt, type, updatedAt])
+  @@index([dataRoomId, parentId, deletedAt, type, sizeBytes])
+  @@index([ancestorIds], type: Gin)
+  // The trigram index for name search lives in the initial migration; Prisma cannot
+  // express `gin_trgm_ops` here.
+  @@index([dataRoomId, deletedAt])
+}
+
+enum FileVersionStatus {
+  PENDING
+  READY
+}
+
+model FileVersion {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  nodeId String @db.Uuid
+  node   Node   @relation("NodeVersions", fields: [nodeId], references: [id], onDelete: Cascade)
+
+  version Int
+
+  /// Immutable once written, so a rename never touches storage.
+  storageKey String            @unique
+  /// Int rather than BigInt: JSON-serialisable without a replacer, and 2 GiB is far
+  /// above the upload limit.
+  sizeBytes  Int               @default(0)
+  mimeType   String
+  status     FileVersionStatus @default(PENDING)
+
+  uploadedById String @db.Uuid
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  currentOf Node? @relation("CurrentVersion")
+
+  @@unique([nodeId, version])
+  // Lets a sweeper find abandoned uploads.
+  @@index([status, createdAt])
+}
+
+enum ShareTargetType {
+  DATA_ROOM
+  NODE
+}
+
+enum ShareMode {
+  PUBLIC_LINK
+  RESTRICTED
+}
+
+enum ShareRole {
+  VIEWER
+}
+
+model Share {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  dataRoomId String   @db.Uuid
+  dataRoom   DataRoom @relation(fields: [dataRoomId], references: [id], onDelete: Cascade)
+
+  targetType ShareTargetType
+  /// Set when targetType is NODE.
+  nodeId     String?         @db.Uuid
+  node       Node?           @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  mode ShareMode
+  /// Here from the start so adding EDITOR is an enum value, not a migration.
+  role ShareRole @default(VIEWER)
+
+  /// Unguessable public identifier used in the share URL.
+  token String @unique
+
+  expiresAt DateTime?
+  revokedAt DateTime?
+
+  createdById String @db.Uuid
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recipients   ShareRecipient[]
+  accessEvents ShareAccessEvent[]
+
+  @@index([dataRoomId, revokedAt])
+  @@index([nodeId, revokedAt])
+}
+
+model ShareRecipient {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  shareId String @db.Uuid
+  share   Share  @relation(fields: [shareId], references: [id], onDelete: Cascade)
+
+  /// Addressed by email so access can be granted before the person has an account;
+  /// bound to a user on their first sign-in.
+  email  String
+  userId String? @db.Uuid
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /// Null inherits `Share.role`.
+  role ShareRole?
+
+  invitedAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  @@unique([shareId, email])
+  @@index([email, revokedAt])
+}
+
+enum ShareAccessAction {
+  LIST
+  VIEW
+  DOWNLOAD
+}
+
+/// Audit trail for everything reached through a share.
+model ShareAccessEvent {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  shareId String @db.Uuid
+  share   Share  @relation(fields: [shareId], references: [id], onDelete: Cascade)
+
+  nodeId String? @db.Uuid
+  node   Node?   @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+
+  /// Null for anonymous access through a public link.
+  userId String? @db.Uuid
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email  String?
+
+  action    ShareAccessAction
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([shareId, createdAt])
+}

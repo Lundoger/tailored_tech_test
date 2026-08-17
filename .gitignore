@@ -1,0 +1,32 @@
+node_modules/
+dist/
+build/
+.next/
+out/
+.turbo/
+coverage/
+
+# Prisma client is generated into the db package
+packages/db/generated/
+
+# Objects written by the local storage driver during development
+.storage/
+
+.env
+.env.*
+!.env.example
+
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+.DS_Store
+Thumbs.db
+
+.vercel/
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local agent/session state
+.omc/

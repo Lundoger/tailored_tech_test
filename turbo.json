@@ -1,0 +1,44 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["NODE_ENV"],
+  "globalPassThroughEnv": [
+    "DATABASE_URL",
+    "DIRECT_URL",
+    "JWT_SECRET",
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_STORAGE_BUCKET",
+    "API_ORIGIN",
+    "WEB_ORIGIN",
+    "PORT"
+  ],
+  "tasks": {
+    "generate": {
+      "inputs": ["prisma/**"],
+      "outputs": ["generated/**"]
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "generated/**", ".next/**", "!.next/cache/**"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "start": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^build"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"]
+    }
+  }
+}

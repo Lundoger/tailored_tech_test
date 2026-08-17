@@ -1,0 +1,31 @@
+{
+  "name": "data-room",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.5.3",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "start": "turbo run start",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @data-room/db run generate",
+    "db:migrate": "pnpm --filter @data-room/db run migrate",
+    "db:deploy": "pnpm --filter @data-room/db run deploy",
+    "db:reset": "pnpm --filter @data-room/db run reset",
+    "db:seed": "pnpm --filter @data-room/db run seed",
+    "db:studio": "pnpm --filter @data-room/db run studio"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6",
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "turbo": "^2.10.10",
+    "typescript": "^5.9.3"
+  }
+}

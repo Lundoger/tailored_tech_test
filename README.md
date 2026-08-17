@@ -4,7 +4,8 @@ A virtual data room for due diligence: organise documents into nested folders, u
 share a room, a folder or a single file with read-only access — either through a public link or
 with named people.
 
-**Live app:** _<!-- TODO: Vercel URL -->_ · **API + Swagger:** _<!-- TODO: Railway URL -->/docs_
+**Live app:** <https://tailoredtech.vercel.app> · **API + Swagger:**
+<https://data-roomapi-production.up.railway.app/docs>
 
 Demo accounts (created by `pnpm db:seed`):
 
